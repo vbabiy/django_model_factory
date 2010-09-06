@@ -26,11 +26,24 @@ class Blueprint(object):
     Store the blueprint to create a object for the factory.
     """
     
+    class CallbackNotCallable(Exception): pass
+    
     def __init__(self, name_of_factory, model, kwargs, create_function):
         self.name_of_factory = name_of_factory
         self.model = model
         self.kwargs = kwargs
         self.create_function = create_function
+        self.after_create_callback = self.kwargs.pop('after_create_cb', None)
+        self.after_build_callback = self.kwargs.pop('after_build_cb', None)
+        
+        # Make sure callback is callable
+        if self.after_create_callback:
+            if not callable(self.after_create_callback):
+                raise self.CallbackNotCallable("after_create_cb must be a callable object.")
+        
+        if self.after_build_callback:
+            if not callable(self.after_build_callback):
+                raise self.CallbackNotCallable("after_build_cb must be a callable object.")
     
     def create(self, kwargs):
         """
@@ -47,7 +60,24 @@ class Blueprint(object):
         
         func = getattr(self.model.objects, self.create_function)
         result = func(**params)
+        if self.after_create_callback:
+            result = self.after_create_callback(result, params)
+        return result
 
+    def build(self, kwargs):
+        """
+        Build the object following the blueprint.
+        """
+        params = copy.copy(self.kwargs)
+        params.update(kwargs)
+        
+        for key, value in params.iteritems():
+            if isinstance(value, Sequence): 
+                params[key] = value.next()
+        
+        result = self.model(**params)
+        if self.after_build_callback:
+            result = self.after_build_callback(result, params)
         return result
 
 class Factory(object):
@@ -62,6 +92,13 @@ class Factory(object):
     
     @classmethod
     def create(self, name_of_factory, **kwargs):
+        bp = self.__factories__.get(name_of_factory)
+        if not bp == None:
+            return bp.create(kwargs)
+        raise self.NoFactoryDefined("There was no factory defined for %s" % name_of_factory)
+    
+    @classmethod
+    def build(self, name_of_factory, **kwargs):
         bp = self.__factories__.get(name_of_factory)
         if not bp == None:
             return bp.create(kwargs)
