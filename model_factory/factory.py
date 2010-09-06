@@ -79,6 +79,11 @@ class Blueprint(object):
         if self.after_build_callback:
             result = self.after_build_callback(result, params)
         return result
+    
+    def extend(self, name, kwargs):
+        kw = self.kwargs.copy()
+        kw.update(kwargs)
+        return Blueprint(name, self.model, kw, self.create_function)
 
 class Factory(object):
     __factories__ = {}
@@ -86,21 +91,33 @@ class Factory(object):
     class NoFactoryDefined(Exception): pass
     
     @classmethod
+    def find_by_name(self, name):
+        return self.__factories__.get(name)
+    
+    @classmethod
     def define(self, name_of_factory, model, kwargs, create_function='create'):
         bp = Blueprint(name_of_factory, model, kwargs, create_function)
         self.__factories__[name_of_factory] = bp
     
     @classmethod
+    def extend(self, extending_factory_name, name_of_factory, kwargs):
+        bp = self.find_by_name(extending_factory_name)
+        if bp:
+            self.__factories__[name_of_factory] = bp.extend(name_of_factory, kwargs)
+            return
+        raise self.NoFactoryDefined("There was no factory defined for %s" % extending_factory_name)
+
+    @classmethod
     def create(self, name_of_factory, **kwargs):
-        bp = self.__factories__.get(name_of_factory)
-        if not bp == None:
+        bp = self.find_by_name(name_of_factory)
+        if bp:
             return bp.create(kwargs)
         raise self.NoFactoryDefined("There was no factory defined for %s" % name_of_factory)
     
     @classmethod
     def build(self, name_of_factory, **kwargs):
-        bp = self.__factories__.get(name_of_factory)
-        if not bp == None:
+        bp = self.find_by_name(name_of_factory)
+        if bp:
             return bp.create(kwargs)
         raise self.NoFactoryDefined("There was no factory defined for %s" % name_of_factory)
     
@@ -114,8 +131,8 @@ class Factory(object):
     
     @classmethod
     def attributes_for(self, name_of_factory):
-        bp = self.__factories__.get(name_of_factory)
-        if not bp == None:
+        bp = self.find_by_name(name_of_factory)
+        if bp:
             res = {}
             for key, value in bp.kwargs.iteritems():
                 if not isinstance(value, Relationship):
